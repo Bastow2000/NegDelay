@@ -9,6 +9,8 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "DSP.h"
+#include "ParamId.h"
 
 //==============================================================================
 /**
@@ -16,7 +18,8 @@
 class NegDelayAudioProcessor  : public juce::AudioProcessor
 {
 public:
-    //==============================================================================
+    APVTS apvts;
+
     NegDelayAudioProcessor();
     ~NegDelayAudioProcessor() override;
 
@@ -56,4 +59,10 @@ public:
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NegDelayAudioProcessor)
+    //DSP::Delay<double> delayProcessor;
+    DSP::SineWaveGeneration<float> sine;
+    DSP::FeedforwardDelay<float> delay;
+
+
+    Parameters::Ids ids;
 };

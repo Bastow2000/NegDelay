@@ -19,7 +19,7 @@ NegDelayAudioProcessor::NegDelayAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),  apvts (*this, nullptr, "Parameters", Parameters::createParameterLayout())
 #endif
 {
 }
@@ -93,14 +93,21 @@ void NegDelayAudioProcessor::changeProgramName (int index, const juce::String& n
 //==============================================================================
 void NegDelayAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    auto* delayTime = apvts.getRawParameterValue(ids.delayTime);
+    int silence = 5;
+    sine.setup(sampleRate, silence);
+
+    // Initialize delay with maximum possible delay time
+    delay.setup(sampleRate, 1.f);
 }
+
 
 void NegDelayAudioProcessor::releaseResources()
 {
+   // delayProcessor.reset();
     // When playback stops, you can use this as an opportunity to free up any
     // spare memory, etc.
+    sine.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -132,30 +139,37 @@ bool NegDelayAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
 void NegDelayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    // Get the current delay time value
+    auto* delayTime = apvts.getRawParameterValue(ids.delayTime);
+    float currentDelayTime = delayTime->load();
+    delay.setDelayTime(currentDelayTime);
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
+        auto* channelData = buffer.getWritePointer(channel);
+        std::vector<float> channelVector(channelData, channelData + buffer.getNumSamples());
 
-        // ..do something to the data...
+        // Generate test signal
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            channelVector[sample] = sine.processSineWave(sample, buffer.getNumSamples());
+        }
+
+        // Process the channel through delay
+        auto processedVector = delay.process(channelVector);
+
+        // Copy processed data back to the AudioBuffer
+        std::copy(processedVector.begin(),
+                 processedVector.begin() + buffer.getNumSamples(),
+                 channelData);
     }
+
+    // Clear unused channels
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear(i, 0, buffer.getNumSamples());
 }
 
 //==============================================================================
@@ -166,7 +180,8 @@ bool NegDelayAudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* NegDelayAudioProcessor::createEditor()
 {
-    return new NegDelayAudioProcessorEditor (*this);
+   //return new NegDelayAudioProcessorEditor (*this);
+   return new juce::GenericAudioProcessorEditor(*this);
 }
 
 //==============================================================================
@@ -179,8 +194,10 @@ void NegDelayAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void NegDelayAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+
+
     // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    // whose contents will have been created by the /getStateInformation() call.
 }
 
 //==============================================================================

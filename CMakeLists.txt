@@ -33,7 +33,7 @@ juce_add_plugin("${PROJECT_NAME}"
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     PRODUCT_NAME "${PROJECT_NAME}"
-    PLUGIN_NAME "ThunderGeneration")
+    PLUGIN_NAME "Multi Delay")
 
 juce_generate_juce_header("${PROJECT_NAME}")
 
@@ -52,11 +52,10 @@ target_compile_definitions("${PROJECT_NAME}"
 
 target_link_libraries("${PROJECT_NAME}"
     PRIVATE
-	    BinaryData
+	    #BinaryData
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
