@@ -140,8 +140,9 @@ namespace DSP {
         T feedback{0.01};
         T mix{0.15};
 
-        DelayType currentType{DelayType::FeedBack};
-
+        // Initialises buffer with zeros of length maxDelay before runtime
+        // std::array<T, maxDelay> buffer{};
+        // std::array<T, maxDelay> tempBuffer{};
         std::vector<T> buffer{};
 
         TrendFilter<T> trendSmoothingFilter{};
@@ -163,7 +164,7 @@ namespace DSP {
             delaySamples = setDelaySamples(delayTime);
 
             // Resize buffer with samples
-            buffer.resize(delaySamples );
+            buffer.resize(delaySamples);
 
             // fill buffer with zeros
             std::fill(buffer.begin(), buffer.end(), T(0));
@@ -192,7 +193,6 @@ namespace DSP {
 
         template<typename DelayTimeType>
         void setDelayTime(DelayTimeType delayValue) {
-
             // dynamically adjust delay samples
             currentDelaySamples = setDelaySamples(delayValue);
 
@@ -218,6 +218,11 @@ namespace DSP {
             feedback = std::clamp(feedbackAmount, T(0), T(1));
         }
 
+        void setMix(T mixAmount) {
+            // Clamp mix to prevent instability
+            mix = std::clamp(mixAmount, T(0), T(1));
+        }
+
 
         std::vector<T> process(const std::vector<T> &input) {
             std::vector<T> output(input.size());
@@ -238,7 +243,8 @@ namespace DSP {
                 if (currentType == DelayType::FeedForward)
                     writePos = (writePos + 1) % buffer.size();
 
-                const double smoothedDelayTime = trendSmoothingFilter.process(currentDelaySamples);
+                double smoothedDelayTime = trendSmoothingFilter.process(currentDelaySamples);
+                smoothedDelayTime = EMASmoothing.process(smoothedDelayTime);
 
                 // Calculate read position based on current delay time
                 readPos = writePos + (static_cast<size_t>(smoothedDelayTime) > writePos) * buffer.size() -

@@ -36,6 +36,7 @@ namespace Parameters {
 
         addFloatParam(ids.delayTime, "DelayTime", juce::NormalisableRange<float>{0.0f, 1.0f}, 0.5f);
         addFloatParam(ids.feedbackAmount, "FeedbackAmount", juce::NormalisableRange<float>{0.0f, 0.5f}, 0.05f);
+        addFloatParam(ids.mix, "mix", juce::NormalisableRange<float>{0.0f, 1.0f}, 0.05f);
         addIntParam(ids.delayType, "DelayType", delayTypeRange, static_cast<int>(DelayType::FeedForward));
 
 

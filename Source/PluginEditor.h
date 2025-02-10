@@ -10,25 +10,44 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "ParamId.h"
+
 
 //==============================================================================
 /**
 */
-class NegDelayAudioProcessorEditor : public juce::AudioProcessorEditor {
+class NegDelayAudioProcessorEditor : public juce::AudioProcessorEditor, public juce::Value::Listener {
 public:
     NegDelayAudioProcessorEditor(NegDelayAudioProcessor &);
 
     ~NegDelayAudioProcessorEditor() override;
 
-    //==============================================================================
     void paint(juce::Graphics &) override;
 
     void resized() override;
 
+    void valueChanged(juce::Value &value) override {
+    }
+
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
     NegDelayAudioProcessor &audioProcessor;
+
+    // Sliders
+    juce::Slider feedbackSlider;
+    juce::Slider mixSlider;
+    juce::Slider delayTimeSlider;
+    juce::Slider delayFeedbackSlider;
+
+    // Labels
+    juce::Label feedbackLabel;
+    juce::Label mixLabel;
+    juce::Label delayTimeLabel;
+    juce::Label delayFeedbackLabel;
+
+    std::unique_ptr<SliderAttachment> feedbackAttachment;
+    std::unique_ptr<SliderAttachment> mixAttachment;
+    std::unique_ptr<SliderAttachment> delayTimeAttachment;
+    std::unique_ptr<SliderAttachment> delayFeedbackAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NegDelayAudioProcessorEditor)
 };

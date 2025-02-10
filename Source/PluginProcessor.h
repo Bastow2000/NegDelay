@@ -66,6 +66,8 @@ public:
 
     void setStateInformation(const void *data, int sizeInBytes) override;
 
+    juce::AudioProcessorValueTreeState &getAPVTS() { return apvts; }
+
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NegDelayAudioProcessor)
@@ -76,7 +78,8 @@ private:
 
     // Default to 120 BPM, quaver notes
     std::pair<int, int> tempoParams{120, 1};
-    DelayTimeChoice currentDelayTimeChoice{DelayTimeChoice::TempoSync};
+
+    DelayTimeChoice currentDelayTimeChoice{DelayTimeChoice::Normal};
 
 
     Parameters::Ids ids;

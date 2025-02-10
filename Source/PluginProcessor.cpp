@@ -83,10 +83,6 @@ void NegDelayAudioProcessor::changeProgramName(int index, const juce::String &ne
 void NegDelayAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     int silence = 5;
     sine.setup(sampleRate, silence);
-    /*std::atomic<float>* delayType = nullptr;
-    delayType = apvts.getRawParameterValue(ids.delayType);
-    currentType = static_cast<DelayType>(static_cast<int>(delayType->load()));*/
-    // Initialize delay with maximum possible delay time
     std::pair<float, float> bpmAndDivision{120.0f, 1.0f};
     switch (currentType) {
         case DelayType::FeedForward:
@@ -177,21 +173,23 @@ void NegDelayAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce
 
         // Process the channel through delay
         auto processedVector = channelVector;
-        /* std::atomic<float>* delayType = nullptr;
-         delayType = apvts.getRawParameterValue(ids.delayType);
-         currentType = static_cast<DelayType>(static_cast<int>(delayType->load()));*/
+        std::atomic<float>* mix = nullptr;
+        mix = apvts.getRawParameterValue(ids.mix);
+
         DBG("currentType: " + std::to_string(static_cast<int>(currentType)));
         switch (currentType) {
             case DelayType::FeedForward:
                 processedVector = feedForwardDelay.process(channelVector);
+                feedForwardDelay.setMix(mix->load());
                 if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
-                    feedbackDelay.setDelayTime(tempoParams);
+                    feedForwardDelay.setDelayTime(tempoParams);
                 else
-                    feedbackDelay.setDelayTime(currentDelayTime);
+                    feedForwardDelay.setDelayTime(currentDelayTime);
 
                 break;
             case DelayType::FeedBack:
                 processedVector = feedbackDelay.process(channelVector);
+                feedbackDelay.setMix(mix->load());
                 if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
                     feedbackDelay.setDelayTime(tempoParams);
                 else
@@ -221,8 +219,8 @@ bool NegDelayAudioProcessor::hasEditor() const {
 }
 
 juce::AudioProcessorEditor *NegDelayAudioProcessor::createEditor() {
-    //return new NegDelayAudioProcessorEditor (*this);
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new NegDelayAudioProcessorEditor (*this);
+   // return new juce::GenericAudioProcessorEditor(*this);
 }
 
 //==============================================================================
