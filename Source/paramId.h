@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "DSP.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 
@@ -13,7 +14,9 @@ namespace Parameters {
 		MAKE_ID(delayTime)
 		MAKE_ID(mix)
 		MAKE_ID(feedbackAmount)
+		MAKE_ID(delayTempoSync)
 		MAKE_ID(delayType)
+		MAKE_ID(delayTypeTime)
 #undef MAKE_ID
 
 		Ids &operator=(const Ids &) = delete;
@@ -21,39 +24,12 @@ namespace Parameters {
 }
 
 
-enum class DelayType {
-	FeedForward,
-	FeedBack,
-	MultiTap /*,
-	TempoSync,
-	MultiTapDelay,
-	StereoDelay,
-	ImpulseDelay,
-	ConvolutionDelay*/
-};
-
-enum class DelayTimeChoice {
-	TempoSync,
-	Normal /*,
-	TempoSync,
-	MultiTapDelay,
-	StereoDelay,
-	ImpulseDelay,
-	ConvolutionDelay*/
-};
-
 enum class DelayMode {
 	Normal,
 	MultiTap
 };
 
-enum class DelayTimeType {
-	Normal,
-	TempoSync
-};
 
-
-inline auto currentType{DelayType::FeedBack};
 static constexpr size_t maxDelay{240000};
 
 namespace NegCol {

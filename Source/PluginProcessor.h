@@ -68,18 +68,28 @@ public:
 
     juce::AudioProcessorValueTreeState &getAPVTS() { return apvts; }
 
+    void updateDelayTimeType(DSP::DelayTimeType newType);
+
+    void updateDelayType(DSP::DelayType newType);
+
+    void setDelayParams(const DSP::DelayParams<float> &newParams);
+
+    float getCurrentBPM();
+
+    DSP::DelayParams<float> delayParams = {0.5f, {120.0f, 1.0f}};
+
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NegDelayAudioProcessor)
     //DSP::Delay<double> delayProcessor;
     DSP::SineWaveGeneration<float> sine;
-    DSP::Delay<float, DSP::Feedback> feedbackDelay;
-    DSP::Delay<float, DSP::Feedforward> feedForwardDelay;
+    DSP::Delay<float> delay;
+
 
     // Default to 120 BPM, quaver notes
-    std::pair<int, int> tempoParams{120, 1};
 
-    DelayTimeChoice currentDelayTimeChoice{DelayTimeChoice::Normal};
+    DSP::DelayTimeType currentDelayTime{DSP::DelayTimeType::TempoSync};
+    DSP::DelayType currentDelayType{DSP::DelayType::FeedBack};
 
 
     Parameters::Ids ids;

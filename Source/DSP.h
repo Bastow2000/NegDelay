@@ -2,15 +2,25 @@
 
 #include <array>
 #include <cmath>
-#include <functional>
-#include <unistd.h>
-#include <variant>
 #include <vector>
 #include <JuceHeader.h>
 #include "ParamId.h"
 
 
 namespace DSP {
+    //--------- Delay Modifications -------
+
+    enum class DelayType {
+        FeedForward,
+        FeedBack
+    };
+
+    enum class DelayTimeType {
+        Seconds,
+        TempoSync
+    };
+
+    //--------- Interpolation -------
     template<typename T>
     struct linearInterpolation {
         static T interpolation(T valueOne, T valueTwo, double fraction) {
@@ -19,8 +29,9 @@ namespace DSP {
             return valueOne + static_cast<T>(fraction * (valueTwo - valueOne));
         }
 
-        T process(const size_t current /* index */, const std::vector<T> &buffer, const double fraction) {
-            size_t next = (current + 1) % buffer.size();
+        T process(const size_t current /* index */, const size_t bufferSize, const std::vector<T> &buffer,
+                  const double fraction) {
+            size_t next = (current + 1) & (bufferSize - 1);
             return interpolation(buffer[current], buffer[next], fraction);
         }
     };
@@ -43,186 +54,168 @@ namespace DSP {
             return valueTwo + 0.5 * fraction * thirdTerm;
         }
 
-        T process(size_t current /*current Index */, const std::vector<T> &buffer, const double fraction) {
-            size_t prev = (current == 0) ? buffer.size() - 1 : current - 1;
-            size_t next = (current + 1) % buffer.size();
-            size_t future = (next + 1) % buffer.size();
+        T process(size_t current /*current Index */, const size_t bufferSize, const std::vector<T> &buffer,
+                  const double fraction) {
+            size_t prev = (current == 0) ? bufferSize - 1 : current - 1;
+            size_t next = (current + 1) & (bufferSize - 1);
+            size_t future = (next + 1) & (bufferSize - 1);
             return formula(buffer[prev], buffer[current], buffer[next], buffer[future], fraction);
         }
     };
 
+    //--------- DC Filtering -------
     template<typename T>
     struct DCFiltering {
-        T value{};
-        T currentValue{};
-        T prevValue{};
-        T memory{0.999};
+        T output{};
+        T input{};
+        T delayedInput{};
+        T coeff{0.999};
 
         T process(T newCurrentValue) {
-            currentValue = newCurrentValue;
+            input = newCurrentValue;
 
             // DC Filtering formula
             // y[n] = x[n] - x[n-1] + R * y[n-1]
-            value = currentValue - prevValue + memory * value;
-            prevValue = currentValue;
+            output = input - delayedInput + coeff * output;
+            delayedInput = input;
 
+            return output;
+        }
+
+        void setCoefficient(const T newCoeff) {
+            coeff = newCoeff;
+        }
+
+        T cascadedProcess(T value, T filterOrder) {
+            // Cascade DC filtering
+            for (int i = 0; i < filterOrder; ++i) {
+                value = process(value);
+            }
             return value;
         }
 
         void reset() {
-            currentValue = T{};
-            value = T{};
-            prevValue = T{};
+            input = T{};
+            output = T{};
+            delayedInput = T{};
         }
     };
+
+    //--------- Smoothing -------
 
     template<typename T>
     struct EMASmoothing {
-        T value{};
-        T currentValue{};
+        T output{};
+        T input{};
         T smoothingFactor{0.001};
 
-        T process(T newCurrentValue) {
-            currentValue = newCurrentValue;
+        T process(T newInput) {
+            input = newInput;
 
             // Exponential Moving Average (EMA) formula
             // y[n] = y[n-1] + alpha * (x[n] - y[n-1])
-            value += smoothingFactor * (currentValue - value);
-            return value;
+            output += smoothingFactor * (input - output);
+            return output;
         }
 
         void reset() {
-            value = currentValue;
+            output = input;
         }
+    };
+
+    //--------- Delay Implementation -------
+
+    template<typename T>
+    struct DelayParams {
+        T delayTime{};
+        std::pair<T, T> bpmAndNoteDivision;
     };
 
     template<typename T>
-    struct TrendFilter {
-        T level{};
-        T trend{};
-        T levelRate{0.1};
-        T trendRate{0.09};
-
-        T process(T newValue) {
-            if (level == 0) {
-                level = newValue;
-                trend = 0;
-                return level;
-            }
-
-            T prevLevel = level;
-            // Trend Filter
-            // where y[n] is the smoothed value, x[n] is the new value, and b[n] is the trend
-            // y[n] = alpha * x[n] + (1 - alpha) * (y[n-1] + b[n-1])
-            level = levelRate * newValue + (1 - levelRate) * (level + trend);
-
-            // b[n] = beta * (y[n] - y[n-1]) + (1 - beta) * b[n-1]
-            trend = trendRate * (level - prevLevel) + (1 - trendRate) * trend;
-
-            return level + trend;
-        }
-
-        void reset() {
-            level = 0;
-            trend = 0;
-        }
-    };
-
-
-    template<typename T, typename FeedbackType>
     struct Delay {
         size_t delaySamples{};
-        size_t currentDelaySamples{};
         size_t writePos{};
         size_t readPos{};
+        size_t bufferMask{};
+        size_t bufferSize{};
 
         double sampleRate{};
         T feedback{0.01};
-        T mix{0.15};
+        T mix{0.5};
 
-        // Initialises buffer with zeros of length maxDelay before runtime
-        // std::array<T, maxDelay> buffer{};
-        // std::array<T, maxDelay> tempBuffer{};
         std::vector<T> buffer{};
+        DelayType delayType{DelayType::FeedForward};
+        DelayTimeType timeType{DelayTimeType::TempoSync};
 
-        TrendFilter<T> trendSmoothingFilter{};
         EMASmoothing<T> EMASmoothing{};
-        cubicInterpolation<T> cubicInterpolation{};
+        linearInterpolation<T> linearInterpolation{};
         DCFiltering<T> dcFiltering{};
 
-        FeedbackType feedbackType;
+        DelayParams<T> params;
 
-
-        T tanhSaturation(T input, T drive = T(10.0)) {
-            return std::tanh(input * drive);
-        }
-
-        template<typename DelayTimeType>
-        void setup(const double newSampleRate, DelayTimeType delayTime) {
+        void setup(const double newSampleRate, const DelayParams<T> &delayParams) {
             sampleRate = newSampleRate;
 
-            delaySamples = setDelaySamples(delayTime);
+
+            params = delayParams;
+
+            delaySamples = setDelaySamples(params);
 
             // Resize buffer with samples
-            buffer.resize(delaySamples);
+            bufferSize = 4 << static_cast<size_t>(std::ceil(std::log2(delaySamples)));
+            bufferMask = bufferSize - 1;
+            buffer.resize(bufferSize);
 
             // fill buffer with zeros
             std::fill(buffer.begin(), buffer.end(), T(0));
+
+            setDelayTime(delayParams);
         }
 
-        size_t setDelaySamples(T delayTime) {
+        void setTimeType(const DelayTimeType type) {
+            timeType = type;
+        }
+
+        void setDelayType(const DelayType type) {
+            delayType = type;
+        }
+
+        size_t setDelaySamples(const DelayParams<T> &delayParams) {
             // sec * Fs = Samples
             // Calculates maximum delay length in samples
 
+            auto [bpm, division] = delayParams.bpmAndNoteDivision;
+            float noteDuration = 4.0f / std::pow(2.0f, division);
 
-            // dynamically adjust delay samples
-            // currentDelaySamples = static_cast<size_t>(delayTime * delaySamples);
-            return static_cast<size_t>(delayTime * sampleRate);
+            if (timeType == DelayTimeType::Seconds) {
+                return static_cast<size_t>(delayParams.delayTime * sampleRate);
+            } else {
+                return static_cast<size_t>((60.0 / bpm) * noteDuration * sampleRate);
+            }
         }
 
-        size_t setDelaySamples(std::pair<T, T> bpmAndNoteDivision) {
-            auto [beatsPerMinute, noteDivision] = bpmAndNoteDivision;
-            auto beatsPerSecond = beatsPerMinute / T(60);
-            auto secondPerBeats = T(1) / beatsPerSecond;
-
-            // Calculate delay time in seconds
-
-            return static_cast<int>(noteDivision * secondPerBeats * sampleRate);;
-        }
-
-
-        template<typename DelayTimeType>
-        void setDelayTime(DelayTimeType delayValue) {
-            // dynamically adjust delay samples
-            currentDelaySamples = setDelaySamples(delayValue);
-
-            // minimum delay samples, samples at 0 act like samples at 1
-            const auto minDelaySamples = static_cast<size_t>(0.007 * delaySamples);
-
+        void setDelayTime(const DelayParams<T> &delayParams) {
+            delaySamples = setDelaySamples(delayParams);
+            delaySamples = std::min(delaySamples, bufferSize);
             // smooth delay
-            T smoothedDelay = trendSmoothingFilter.process(static_cast<T>(currentDelaySamples));
-
-            // clamp delayTimes
-            currentDelaySamples = std::clamp(currentDelaySamples, minDelaySamples, delaySamples);
+            T smoothedDelay = EMASmoothing.process(static_cast<T>(delaySamples));
         }
 
         void reset() {
             writePos = 0;
             readPos = 0;
             std::fill(buffer.begin(), buffer.end(), T(0));
-            trendSmoothingFilter.reset();
+            EMASmoothing.reset();
+            dcFiltering.reset();
         }
 
         void setFeedback(T feedbackAmount) {
-            // Clamp feedback to prevent instability
             feedback = std::clamp(feedbackAmount, T(0), T(1));
         }
 
         void setMix(T mixAmount) {
-            // Clamp mix to prevent instability
             mix = std::clamp(mixAmount, T(0), T(1));
         }
-
 
         std::vector<T> process(const std::vector<T> &input) {
             std::vector<T> output(input.size());
@@ -234,61 +227,49 @@ namespace DSP {
                 // Write input to buffer
                 buffer[writePos] = input[i];
 
-                // Alternative bufferSize power of 2 only
-                //writePos = (writePos + 1) & bufferMask;
+                // Dry signal at 0
+                if (delaySamples == 0) {
+                    std::copy(input.begin(), input.end(), output.begin());
+                    return output;
+                }
+
 
                 // Increment write position and wrap if needed using multiplication
                 // With this code feedforward works
                 // Y[n] = x[n] + x[n-d]
-                if (currentType == DelayType::FeedForward)
-                    writePos = (writePos + 1) % buffer.size();
+                if (delayType == DelayType::FeedForward)
+                    writePos = (writePos + 1) & bufferMask;
 
-                double smoothedDelayTime = trendSmoothingFilter.process(currentDelaySamples);
-                smoothedDelayTime = EMASmoothing.process(smoothedDelayTime);
+                const double smoothedDelayTime = EMASmoothing.process(delaySamples);
 
                 // Calculate read position based on current delay time
-                readPos = writePos + (static_cast<size_t>(smoothedDelayTime) > writePos) * buffer.size() -
-                          smoothedDelayTime;
+                readPos = (writePos - static_cast<size_t>(smoothedDelayTime) + buffer.size());
+                readPos %= buffer.size();
 
                 const auto readIndex = static_cast<size_t>(readPos);
                 const double frac = readPos - readIndex;
 
-                T delayedSample = cubicInterpolation.process(readIndex, buffer, frac);
-                // Read delayed sample
+                T delayedSample = linearInterpolation.process(readIndex, bufferSize, buffer, frac);
 
-                // Apply DC filtering to the delayed signal
-                T filteredDelay = dcFiltering.process(delayedSample);
+                T filteredDelay = dcFiltering.cascadedProcess(delayedSample, 3);
+                std::cout << "DelayType = " << static_cast<int>(delayType) << std::endl;
 
-                T saturation = tanhSaturation(filteredDelay);
 
-                feedbackType.delayType(buffer, writePos, saturation, feedback);
+                if (delayType == DelayType::FeedForward) {
+                    buffer[writePos];
+                } else {
+                    buffer[writePos] += feedback * filteredDelay;
+                }
 
-                // Mix dry and wet signals and write to output
-                output[i] = (1 - mix) * input[i] + mix * saturation;
+                output[i] = (1 - mix) * input[i] + mix * delayedSample;
 
                 // With this code feedback works
                 // Y[n] = x[n] + f * y[n-d]
-                if (currentType == DelayType::FeedBack)
-                    writePos = (writePos + 1) % buffer.size();
+                if (delayType == DelayType::FeedBack)
+                    writePos = (writePos + 1) & bufferMask;
             }
 
             return output;
-        }
-    };
-
-    // Allows for feedback delay to be processed
-    struct Feedback {
-        template<typename T>
-        static void delayType(std::vector<T> &buffer, size_t writePos, T &input, T feedbackAmount) {
-            buffer[writePos] = buffer[writePos] + feedbackAmount * input;
-        }
-    };
-
-    // Allows for feedforward delay to be processed
-    struct Feedforward {
-        template<typename T>
-        static void delayType(std::vector<T> &buffer, size_t writePos, T &input, T feedbackAmount) {
-            buffer[writePos] = input;
         }
     };
 
@@ -324,11 +305,9 @@ namespace DSP {
         }
 
         T processSineWave(T n, T bufferSize) {
-            // When Sample Counter Reaches total Cycle reset
-            size_t currentPosition = sampleCounter % totalCycle;
+            // Sample Counter Reaches total Cycle reset
+            const size_t currentPosition = sampleCounter % totalCycle;
             sampleCounter++;
-
-            //DBG("currentPosition: " + std::to_string(currentPosition));
 
             if (currentPosition < silencePerSec) {
                 return static_cast<T>(0);
@@ -336,7 +315,8 @@ namespace DSP {
                 // Increments phase
                 phaseIncrement = 2 * M_PI * frequency / sampleRate_;
                 phase += phaseIncrement;
-                // Wraps phase
+
+                // Phase reaches 2 Pi reset cycle
                 if (phase > M_PI * 2)
                     phase -= M_PI * 2;
 

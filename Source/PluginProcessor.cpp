@@ -83,28 +83,7 @@ void NegDelayAudioProcessor::changeProgramName(int index, const juce::String &ne
 void NegDelayAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     int silence = 5;
     sine.setup(sampleRate, silence);
-    std::pair<float, float> bpmAndDivision{120.0f, 1.0f};
-    switch (currentType) {
-        case DelayType::FeedForward:
-            // Chooses which delay Time type is chooses
-                //uses function overloads for refactoring
-            if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
-                feedForwardDelay.setup(sampleRate, bpmAndDivision);
-            else
-                feedForwardDelay.setup(sampleRate, 1.f);
-
-            break;
-        case DelayType::FeedBack:
-            if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
-                feedbackDelay.setup(sampleRate, bpmAndDivision);
-            else
-                feedbackDelay.setup(sampleRate, 1.f);
-
-            break;
-        default:
-            feedForwardDelay.setup(sampleRate, 1.f);
-            break;
-    }
+    delay.setup(sampleRate, delayParams);
 }
 
 
@@ -113,17 +92,7 @@ void NegDelayAudioProcessor::releaseResources() {
     // When playback stops, you can use this as an opportunity to free up any
     // spare memory, etc.
     sine.reset();
-    switch (currentType) {
-        case DelayType::FeedForward:
-            feedForwardDelay.reset();
-            break;
-        case DelayType::FeedBack:
-            feedbackDelay.reset();
-            break;
-        default:
-            feedForwardDelay.reset();
-            break;
-    }
+    delay.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -158,7 +127,15 @@ void NegDelayAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce
 
     // Get the current delay time value
     auto *delayTime = apvts.getRawParameterValue(ids.delayTime);
-    float currentDelayTime = delayTime->load();
+    delayParams.delayTime = delayTime->load();
+
+    auto *tempoSyncParam = apvts.getRawParameterValue(ids.delayTempoSync);
+    int divisionIndex = static_cast<int>(tempoSyncParam->load());
+    float bpm = getCurrentBPM();
+    std::pair<float, float> pair{bpm, divisionIndex};
+    delayParams.bpmAndNoteDivision = pair;
+
+
     auto *feedbackAmount = apvts.getRawParameterValue(ids.feedbackAmount);
     auto feedback = feedbackAmount->load();
 
@@ -173,34 +150,13 @@ void NegDelayAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce
 
         // Process the channel through delay
         auto processedVector = channelVector;
-        std::atomic<float>* mix = nullptr;
-        mix = apvts.getRawParameterValue(ids.mix);
+        auto *mixAmount = apvts.getRawParameterValue(ids.mix);
+        auto mix = mixAmount->load();
 
-        DBG("currentType: " + std::to_string(static_cast<int>(currentType)));
-        switch (currentType) {
-            case DelayType::FeedForward:
-                processedVector = feedForwardDelay.process(channelVector);
-                feedForwardDelay.setMix(mix->load());
-                if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
-                    feedForwardDelay.setDelayTime(tempoParams);
-                else
-                    feedForwardDelay.setDelayTime(currentDelayTime);
-
-                break;
-            case DelayType::FeedBack:
-                processedVector = feedbackDelay.process(channelVector);
-                feedbackDelay.setMix(mix->load());
-                if (currentDelayTimeChoice == DelayTimeChoice::TempoSync)
-                    feedbackDelay.setDelayTime(tempoParams);
-                else
-                    feedbackDelay.setDelayTime(currentDelayTime);
-                feedbackDelay.setFeedback(feedback);
-
-                break;
-            default:
-                processedVector = feedForwardDelay.process(channelVector);
-                break;
-        }
+        processedVector = delay.process(channelVector);
+        delay.setDelayTime(delayParams);
+        delay.setFeedback(feedback);
+        delay.setMix(mix);
 
         // Copy processed data back to the AudioBuffer
         std::copy(processedVector.begin(),
@@ -213,14 +169,51 @@ void NegDelayAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce
         buffer.clear(i, 0, buffer.getNumSamples());
 }
 
+void NegDelayAudioProcessor::updateDelayTimeType(const DSP::DelayTimeType newType) {
+    currentDelayTime = newType;
+    delay.setTimeType(newType);
+    delay.setDelayTime(delayParams);
+}
+
+void NegDelayAudioProcessor::updateDelayType(const DSP::DelayType newType) {
+    currentDelayType = newType;
+    delay.setDelayType(newType);
+}
+
+
+void NegDelayAudioProcessor::setDelayParams(const DSP::DelayParams<float> &newParams) {
+    delayParams = newParams;
+    delay.setup(getSampleRate(), delayParams);
+}
+
+float NegDelayAudioProcessor::getCurrentBPM() {
+    // Get the playhead from the processor
+    auto playhead = this->getPlayHead();
+
+    if (playhead) {
+        // Retrieve the current position info
+        auto positionInfo = playhead->getPosition();
+
+        if (positionInfo.hasValue()) {
+            // Check if the tempo (BPM) is available
+            if (positionInfo->getBpm().hasValue()) {
+                return static_cast<float>(*positionInfo->getBpm());
+            }
+        }
+    }
+
+    // Fallback to default BPM if no DAW information is available
+    return 120.0f; // Default BPM
+}
+
 //==============================================================================
 bool NegDelayAudioProcessor::hasEditor() const {
     return true; // (change this to false if you choose to not supply an editor)
 }
 
 juce::AudioProcessorEditor *NegDelayAudioProcessor::createEditor() {
-    return new NegDelayAudioProcessorEditor (*this);
-   // return new juce::GenericAudioProcessorEditor(*this);
+    return new NegDelayAudioProcessorEditor(*this);
+    // return new juce::GenericAudioProcessorEditor(*this);
 }
 
 //==============================================================================
