@@ -180,7 +180,6 @@ void NegDelayAudioProcessor::updateDelayType(const DSP::DelayType newType) {
     delay.setDelayType(newType);
 }
 
-
 void NegDelayAudioProcessor::setDelayParams(const DSP::DelayParams<float> &newParams) {
     delayParams = newParams;
     delay.setup(getSampleRate(), delayParams);
@@ -191,19 +190,18 @@ float NegDelayAudioProcessor::getCurrentBPM() {
     auto playhead = this->getPlayHead();
 
     if (playhead) {
-        // Retrieve the current position info
+
         auto positionInfo = playhead->getPosition();
 
         if (positionInfo.hasValue()) {
-            // Check if the tempo (BPM) is available
+
             if (positionInfo->getBpm().hasValue()) {
                 return static_cast<float>(*positionInfo->getBpm());
             }
         }
     }
 
-    // Fallback to default BPM if no DAW information is available
-    return 120.0f; // Default BPM
+    return 120.0f;
 }
 
 //==============================================================================
